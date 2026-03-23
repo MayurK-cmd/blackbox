@@ -1,4 +1,4 @@
-# 🔲 BlackBox (or your final name)
+# 🔲 BlackBox
 
 **Privacy-first ML marketplace with verifiable inference using ZK proofs.**
 
