@@ -1,74 +1,74 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader } from 'lucide-react';
-import { useAccount } from 'wagmi';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/Button';
-import { useWriteContract } from 'wagmi';
-import { parseEther } from 'viem';
-import { abi } from '../../abi/MLModelMarketplace'; // Adjust import path
-import { usePublicClient } from 'wagmi';
+import { useStore } from '../store';
+import type { Model } from '../types';
 
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
-  const { address } = useAccount();
-  const { writeContract, isPending, error } = useWriteContract();
-  const publicClient = usePublicClient();
-  const [isGenerating, setIsGenerating] = useState(false);
+  const { wallet, models, setModels } = useStore();
+
+  const [isPending, setIsPending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
   const [formData, setFormData] = useState({
-    provider: '',
     name: '',
     description: '',
     inputFormat: '',
-    pricePerPrediction: '',
-    codeHash: '',
+    pricePerPrediction: '',   // user enters human-readable DUST amount
+    circuitHash: '',
   });
-  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
-    
+
+    // ── Validation ────────────────────────────────────────────────────────────
+    if (!wallet.isConnected || !wallet.unshieldedAddress) {
+      setErrorMessage('Please connect your Lace wallet first.');
+      return;
+    }
+
+    const priceNum = Number(formData.pricePerPrediction);
+    if (!formData.pricePerPrediction || isNaN(priceNum) || priceNum <= 0) {
+      setErrorMessage('Enter a valid price in DUST.');
+      return;
+    }
+
+    if (!formData.circuitHash.trim()) {
+      setErrorMessage('Circuit hash is required.');
+      return;
+    }
+
+    setIsPending(true);
     try {
-      // Add validation
-      if (!formData.pricePerPrediction || isNaN(Number(formData.pricePerPrediction))) {
-        throw new Error('Invalid price value');
-      }
+      // Convert human-readable DUST to raw bigint units (1 DUST = 1_000_000 raw)
+      const priceInDust = BigInt(Math.round(priceNum * 1_000_000));
 
-      const priceInWei = parseEther(formData.pricePerPrediction);
-      
-      // // Add code hash validation
-      // if (!formData.codeHash.match(/^0x[a-fA-F0-9]{64}$/)) {
-      //   throw new Error('Code hash must be 64 hex characters with 0x prefix');
-      // }
+      const newModel: Model = {
+        id: crypto.randomUUID(),
+        provider: wallet.unshieldedAddress,   // Bech32m address from Lace wallet
+        name: formData.name,
+        description: formData.description,
+        inputFormat: formData.inputFormat,
+        pricePerPrediction: priceInDust,
+        circuitHash: formData.circuitHash.trim(),
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
 
-      const codeHash = formData.codeHash.startsWith('0x') 
-        ? formData.codeHash 
-        : `0x${formData.codeHash}`;
+      // Register model in Zustand store (on-chain registry comes with Compact contract later)
+      setModels([...models, newModel]);
+      navigate('/dashboard');
 
-      const hash = await writeContract({
-        address: '0xA81a624F25a114b392A0894703b380aEb7cd7864',
-        abi: abi,
-        functionName: 'registerModel',
-        args: [
-          formData.name,
-          formData.description,
-          formData.inputFormat,
-          priceInWei,
-          codeHash as `0x${string}`
-        ],
-      });
-
-      // Wait for transaction confirmation
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status === 'success') {
-        navigate('/dashboard');
-      } else {
-        throw new Error('Transaction failed');
-      }
-    } catch (error) {
-      console.error('Registration failed:', error);
-      setErrorMessage(error?.toString() || 'Failed to register model');
+    } catch (err) {
+      console.error('Model registration failed:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to register model.');
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -79,37 +79,29 @@ export const UploadPage: React.FC = () => {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Upload Model</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Upload your AI model and generate a zero-knowledge proof
+              Register your AI model on the ZkML Marketplace
             </p>
           </div>
         </div>
 
         <div className="bg-white shadow-sm rounded-lg p-6">
-          <form>
+          <form onSubmit={handleSubmit}>
             <div className="space-y-6">
+
+              {/* Provider address – read from Lace wallet */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Provider Address
                 </label>
-                {address ? (
-                  <input
-                    type="text"
-                    className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    value={address}
-                    disabled
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    value={formData.provider}
-                    onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-                    placeholder="0x..."
-                  />
-                )}
+                <input
+                  type="text"
+                  disabled
+                  className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm text-gray-500 text-sm"
+                  value={wallet.unshieldedAddress ?? 'Connect your Lace wallet to populate this field'}
+                />
               </div>
 
+              {/* Model name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Model Name
@@ -123,6 +115,7 @@ export const UploadPage: React.FC = () => {
                 />
               </div>
 
+              {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Description
@@ -136,6 +129,7 @@ export const UploadPage: React.FC = () => {
                 />
               </div>
 
+              {/* Input format */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Input Format
@@ -146,36 +140,51 @@ export const UploadPage: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                   value={formData.inputFormat}
                   onChange={(e) => setFormData({ ...formData, inputFormat: e.target.value })}
+                  placeholder="e.g. JSON with fields: sepal_length, sepal_width, petal_length, petal_width"
                 />
               </div>
 
+              {/* Price in DUST */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Price Per Prediction (ETH)
+                  Price Per Prediction (DUST)
                 </label>
                 <input
                   type="number"
                   required
-                  step="0.000000000000000001"
+                  min="0"
+                  step="0.000001"
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                   value={formData.pricePerPrediction}
                   onChange={(e) => setFormData({ ...formData, pricePerPrediction: e.target.value })}
+                  placeholder="e.g. 0.05"
                 />
+                <p className="mt-1 text-xs text-gray-400">
+                  DUST is Midnight's fee resource token. 1 DUST = 1,000,000 raw units.
+                </p>
               </div>
 
+              {/* Circuit hash */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Code Hash
+                  Circuit Hash
                 </label>
                 <input
                   type="text"
                   required
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  value={formData.codeHash}
-                  onChange={(e) => setFormData({ ...formData, codeHash: e.target.value })}
-                  placeholder="0x..."
+                  value={formData.circuitHash}
+                  onChange={(e) => setFormData({ ...formData, circuitHash: e.target.value })}
+                  placeholder="sha256:... or hex string of compiled Compact circuit artefact"
                 />
+                <p className="mt-1 text-xs text-gray-400">
+                  Hash of the compiled Compact circuit that governs this model's ZK verification.
+                </p>
               </div>
+
+              {errorMessage && (
+                <div className="text-red-600 text-sm">{errorMessage}</div>
+              )}
 
               <div className="flex justify-end space-x-4">
                 <Button
@@ -187,9 +196,8 @@ export const UploadPage: React.FC = () => {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isPending}
-                  className="min-w-[120px]"
-                  onClick={handleSubmit}
+                  disabled={isPending || !wallet.isConnected}
+                  className="min-w-[140px]"
                 >
                   {isPending ? (
                     <>
@@ -201,12 +209,8 @@ export const UploadPage: React.FC = () => {
                   )}
                 </Button>
               </div>
+
             </div>
-            {errorMessage && (
-              <div className="mt-4 text-red-600 text-sm">
-                {errorMessage}
-              </div>
-            )}
           </form>
         </div>
       </div>

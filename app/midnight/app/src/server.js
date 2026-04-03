@@ -2,96 +2,59 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { run } = require('./app');
-const fs = require('fs');
 const app = express();
 
-// Load environment from same directory
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 app.use(cors());
 app.use(express.json());
 
 app.post('/verify', async (req, res) => {
-  try {
-    const { proof, publicInputs, selectiveDisclosure } = req.body;
+  const { proof, publicInputs, selectiveDisclosure, contractAddress, inputHash } = req.body;
 
-    // Validate selective disclosure configuration
-    if (!selectiveDisclosure) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Selective disclosure configuration is required for Midnight Network'
-      });
-    }
-
-    // Execute the verification process using Midnight SDK
-    // In production, use @midnight-ntwrk/ledger or Midnight node API
-    let verificationResult;
-    try {
-      verificationResult = await run(proof, publicInputs, selectiveDisclosure);
-    } catch (sdkError) {
-      console.warn('Midnight SDK execution failed (likely missing wallet/key config):', sdkError.message);
-      // Fallback for testing when SDK isn't fully configured or wallet context is missing
-      verificationResult = { 
-        isValid: true, 
-        txHash: 'mock-tx-' + Date.now(),
-        selectiveDisclosure: true 
-      };
-    }
-    
-    // Check results after execution
-    const attestationFile = path.join(__dirname, 'attestation.json');
-    const result = await checkVerificationStatus(attestationFile, verificationResult);
-    
-    res.json(result);
-  } catch (error) {
-    console.error('Execution error:', error);
-    res.status(500).json({
+  // ── Validation ─────────────────────────────────────────────────────────────
+  if (!selectiveDisclosure) {
+    return res.status(400).json({
       status: 'error',
-      message: error.message || 'Verification process failed',
-      error: error.toString()
+      message: 'selectiveDisclosure config is required.',
+    });
+  }
+  if (!proof?.proof || !proof?.pub_inputs || !proof?.image_id) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'proof.proof, proof.pub_inputs, and proof.image_id are required.',
+    });
+  }
+
+  // ── Run Midnight verification (app.js) ─────────────────────────────────────
+  try {
+    const result = await run(proof, publicInputs, selectiveDisclosure, contractAddress, inputHash);
+
+    // Mock mode – SDK or env vars not configured
+    if (result.status === 'mock') {
+      console.warn('[server.js] Returning mock response:', result.note);
+      return res.json(result);
+    }
+
+    // Real mode – return the proved unbalanced tx to the frontend.
+    // The user's Lace wallet calls balanceUnsealedTransaction() + submitTransaction().
+    return res.json({
+      status:       'pending',
+      message:      'Transaction proved. Balance and submit via your Midnight wallet.',
+      unbalancedTx: result.unbalancedTx,
+      isValid:      true,
+    });
+
+  } catch (error) {
+    console.error('[server.js] Verification error:', error);
+    return res.status(500).json({
+      status:  'error',
+      message: error.message || 'Verification process failed.',
     });
   }
 });
 
-async function checkVerificationStatus(attestationPath, verificationResult) {
-  try {
-    if (fs.existsSync(attestationPath)) {
-      const attestationData = JSON.parse(fs.readFileSync(attestationPath));
-      
-      // Midnight Network success check based on attestation data
-      if (attestationData?.attestationId || verificationResult?.isValid) {
-        return {
-          status: 'success',
-          message: 'Proof verified and attestation confirmed on Midnight Network!',
-          attestationId: attestationData.attestationId || verificationResult.attestationId,
-          root: attestationData.root || verificationResult.root,
-          txHash: verificationResult.txHash || attestationData.proof?.[0],
-          selectiveDisclosureApplied: verificationResult?.selectiveDisclosure || true
-        };
-      }
-    }
-  } catch (error) {
-    console.warn('Attestation file read error:', error.message);
-  }
-
-  // Fallback to success if any previous confirmation exists
-  if (process.env.LAST_CONFIRMATION) {
-    return {
-      status: 'success',
-      message: 'Proof verified and attestation confirmed!',
-      attestationId: process.env.LAST_CONFIRMATION
-    };
-  }
-
-  // Default response for Midnight Network
-  return {
-    status: 'pending',
-    message: 'Proof submitted to Midnight Network. Verification in progress.',
-    note: 'Midnight uses asynchronous ZK proof verification. Poll for status updates.'
-  };
-}
-
 const PORT = process.env.API_PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`Midnight API server running on port ${PORT}`);
+  console.log(`Midnight ZkML API server running on port ${PORT}`);
 });

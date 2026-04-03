@@ -1,25 +1,40 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Brain, ArrowRight } from 'lucide-react';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount } from 'wagmi';
+import { Brain, ArrowRight, Loader } from 'lucide-react';
 import { Button } from '../components/Button';
 import { HowItWorks } from '../components/HowItWorks';
-import { ConnectWallet, useConnectWallet, disconnectWallet } from '@newm.io/cardano-dapp-wallet-connector';
+import { useStore } from '../store';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isConnected: isEvmConnected } = useAccount();
-  const { isConnected: isCardanoConnected, enabledWallet } = useConnectWallet();
+  const { wallet, connectWallet } = useStore();
+  const [isConnecting, setIsConnecting] = React.useState(false);
+  const [connectError, setConnectError] = React.useState('');
 
+  // Redirect to dashboard once wallet is connected
   React.useEffect(() => {
-    if (isEvmConnected || isCardanoConnected) {
+    if (wallet.isConnected) {
       navigate('/dashboard');
     }
-  }, [isEvmConnected, isCardanoConnected, navigate]);
+  }, [wallet.isConnected, navigate]);
+
+  const handleConnect = async () => {
+    setConnectError('');
+    setIsConnecting(true);
+    try {
+      await connectWallet('preprod');
+    } catch (err) {
+      setConnectError(
+        err instanceof Error ? err.message : 'Failed to connect wallet.'
+      );
+    } finally {
+      setIsConnecting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white">
+      {/* Nav */}
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -36,15 +51,27 @@ export const LandingPage: React.FC = () => {
               >
                 Explore
               </Link>
-
-              {/* Show only one wallet UI at a time */}
-              
-              {!isEvmConnected && <ConnectWallet />}
+              <Button
+                onClick={handleConnect}
+                disabled={isConnecting}
+                size="sm"
+                variant="outline"
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader className="animate-spin h-4 w-4 mr-2" />
+                    Connecting...
+                  </>
+                ) : (
+                  'Connect Lace'
+                )}
+              </Button>
             </div>
           </div>
         </div>
       </nav>
-      {/* Hero Section */}
+
+      {/* Hero */}
       <div className="relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="pt-16 pb-20 lg:pt-24 lg:pb-28">
@@ -54,18 +81,26 @@ export const LandingPage: React.FC = () => {
                 <span className="block text-blue-600">Marketplace with zk-Proofs</span>
               </h1>
               <p className="mt-3 max-w-md mx-auto text-base text-gray-500 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
-                Upload your trained AI models, generate zero-knowledge proofs, and verify model integrity without exposing sensitive details. Powered by RISC Zero zkVM.
+                Upload your trained AI models, generate zero-knowledge proofs, and verify
+                model integrity without exposing sensitive details. Powered by RISC Zero
+                zkVM and Midnight Network's selective disclosure.
               </p>
+
               <div className="mt-5 max-w-md mx-auto sm:flex sm:justify-center md:mt-8">
                 <div className="rounded-md shadow">
-                  <ConnectButton.Custom>
-                    {({ openConnectModal }) => (
-                      <Button onClick={openConnectModal} size="lg" className="w-full">
+                  <Button onClick={handleConnect} disabled={isConnecting} size="lg" className="w-full">
+                    {isConnecting ? (
+                      <>
+                        <Loader className="animate-spin h-5 w-5 mr-2" />
+                        Connecting...
+                      </>
+                    ) : (
+                      <>
                         Get Started
                         <ArrowRight className="ml-2 h-5 w-5" />
-                      </Button>
+                      </>
                     )}
-                  </ConnectButton.Custom>
+                  </Button>
                 </div>
                 <div className="mt-3 sm:mt-0 sm:ml-3">
                   <Link to="/explore">
@@ -76,15 +111,18 @@ export const LandingPage: React.FC = () => {
                   </Link>
                 </div>
               </div>
+
+              {connectError && (
+                <p className="mt-4 text-sm text-red-500">{connectError}</p>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* How It Works Section */}
       <HowItWorks />
 
-      {/* Community Section */}
+      {/* Stats */}
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">

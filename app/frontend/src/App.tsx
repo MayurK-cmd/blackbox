@@ -6,11 +6,10 @@ import { DashboardPage } from './pages/DashboardPage';
 import { UploadPage } from './pages/UploadPage';
 import { ExplorePage } from './pages/ExplorePage';
 import { ModelDetailsPage } from './pages/ModelDetailsPage';
-import { useConnectWallet } from '@newm.io/cardano-dapp-wallet-connector';
+import { useStore } from './store';
 
 function App() {
-  const { isConnected: isCardanoConnected } = useConnectWallet();
-  const isConnected = isCardanoConnected;
+  const isConnected = useStore((s) => s.wallet.isConnected);
 
   return (
     <Router>
