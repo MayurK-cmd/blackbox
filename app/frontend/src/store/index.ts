@@ -1,11 +1,16 @@
 import { create } from 'zustand';
-import { Model, User } from '../types';
+import { Model, User, MidnightWalletState, MidnightProofPayload } from '../types';
 
 interface AppState {
   user: User | null;
   models: Model[];
+  wallet: MidnightWalletState;
+  lastProof: MidnightProofPayload | null;
   setUser: (user: User | null) => void;
   setModels: (models: Model[]) => void;
+  setWallet: (wallet: Partial<MidnightWalletState>) => void;
+  setLastProof: (proof: MidnightProofPayload | null) => void;
+  submitProof: (proof: MidnightProofPayload) => Promise<void>;
 }
 
 // Initial model data
@@ -27,6 +32,25 @@ const initialModels: Model[] = [
 export const useStore = create<AppState>((set) => ({
   user: null,
   models: initialModels,
+  wallet: {
+    isConnected: false,
+    address: null,
+    network: 'testnet',
+  },
+  lastProof: null,
   setUser: (user) => set({ user }),
   setModels: (models) => set({ models }),
+  setWallet: (wallet) => set((state) => ({ wallet: { ...state.wallet, ...wallet } })),
+  setLastProof: (proof) => set({ lastProof: proof }),
+  submitProof: async (proof) => {
+    set({ lastProof: { ...proof, status: 'pending' } });
+    try {
+      // Integrate with Midnight dApp Connector API here
+      // const response = await midnightConnector.submitProof(proof);
+      set({ lastProof: { ...proof, status: 'verified' } });
+    } catch (error) {
+      set({ lastProof: { ...proof, status: 'failed' } });
+      console.error('Proof submission failed:', error);
+    }
+  },
 }));

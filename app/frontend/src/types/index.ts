@@ -45,3 +45,27 @@ export interface VerificationData {
     confidence: number;
   };
 }
+
+// Midnight Network Specific Types
+export interface MidnightWalletState {
+  isConnected: boolean;
+  address: string | null;
+  network: 'mainnet' | 'testnet' | 'devnet';
+  balance?: string;
+}
+
+export interface SelectiveDisclosureConfig {
+  revealModelProvider: boolean;
+  revealInputData: boolean;
+  revealOutputResult: boolean;
+  revealTimestamp: boolean;
+}
+
+export interface MidnightProofPayload {
+  proof: string;
+  publicInputs: string[];
+  selectiveDisclosure: SelectiveDisclosureConfig;
+  attestationId?: string;
+  txHash?: string;
+  status: 'pending' | 'verified' | 'failed';
+}
