@@ -5,20 +5,21 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 import { Button } from '../components/Button';
 import { HowItWorks } from '../components/HowItWorks';
+import { ConnectWallet, useConnectWallet, disconnectWallet } from '@newm.io/cardano-dapp-wallet-connector';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isConnected } = useAccount();
+  const { isConnected: isEvmConnected } = useAccount();
+  const { isConnected: isCardanoConnected, enabledWallet } = useConnectWallet();
 
   React.useEffect(() => {
-    if (isConnected) {
+    if (isEvmConnected || isCardanoConnected) {
       navigate('/dashboard');
     }
-  }, [isConnected, navigate]);
+  }, [isEvmConnected, isCardanoConnected, navigate]);
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Navigation */}
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -35,12 +36,14 @@ export const LandingPage: React.FC = () => {
               >
                 Explore
               </Link>
-              <ConnectButton />
+
+              {/* Show only one wallet UI at a time */}
+              
+              {!isEvmConnected && <ConnectWallet />}
             </div>
           </div>
         </div>
       </nav>
-
       {/* Hero Section */}
       <div className="relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
