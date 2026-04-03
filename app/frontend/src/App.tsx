@@ -1,16 +1,18 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useAccount } from 'wagmi';
+
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UploadPage } from './pages/UploadPage';
 import { ExplorePage } from './pages/ExplorePage';
 import { ModelDetailsPage } from './pages/ModelDetailsPage';
+import { useConnectWallet } from '@newm.io/cardano-dapp-wallet-connector';
 
 function App() {
-  const { isConnected } = useAccount();
-
+  
+  const { isConnected: isCardanoConnected } = useConnectWallet();
+  const isConnected = isCardanoConnected;
   return (
     <Router>
       <Routes>
@@ -32,3 +34,5 @@ function App() {
 }
 
 export default App;
+
+
