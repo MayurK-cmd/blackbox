@@ -1,46 +1,38 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const { run } = require('./app');
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+import { run } from './app.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '.env') });
+
 const app = express();
-
-require('dotenv').config({ path: path.join(__dirname, '.env') });
-
 app.use(cors());
 app.use(express.json());
 
 app.post('/verify', async (req, res) => {
-  const { proof, publicInputs, selectiveDisclosure, contractAddress, inputHash } = req.body;
+  const { proof, publicInputs, selectiveDisclosure, contractAddress, inputHash, submitterPublicKey, proverServerUri } = req.body;
 
-  // ── Validation ─────────────────────────────────────────────────────────────
   if (!selectiveDisclosure) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'selectiveDisclosure config is required.',
-    });
+    return res.status(400).json({ status: 'error', message: 'selectiveDisclosure config is required.' });
   }
   if (!proof?.proof || !proof?.pub_inputs || !proof?.image_id) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'proof.proof, proof.pub_inputs, and proof.image_id are required.',
-    });
+    return res.status(400).json({ status: 'error', message: 'proof.proof, proof.pub_inputs, and proof.image_id are required.' });
   }
 
-  // ── Run Midnight verification (app.js) ─────────────────────────────────────
   try {
-    const result = await run(proof, publicInputs, selectiveDisclosure, contractAddress, inputHash);
+    const result = await run(proof, publicInputs, selectiveDisclosure, contractAddress, inputHash, submitterPublicKey, proverServerUri);
 
-    // Mock mode – SDK or env vars not configured
     if (result.status === 'mock') {
       console.warn('[server.js] Returning mock response:', result.note);
       return res.json(result);
     }
 
-    // Real mode – return the proved unbalanced tx to the frontend.
-    // The user's Lace wallet calls balanceUnsealedTransaction() + submitTransaction().
     return res.json({
       status:       'pending',
-      message:      'Transaction proved. Balance and submit via your Midnight wallet.',
+      message:      'Transaction built. Wallet will prove and submit.',
       unbalancedTx: result.unbalancedTx,
       isValid:      true,
     });

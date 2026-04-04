@@ -3,13 +3,18 @@
   "version": "1.0.0",
   "description": "A simple app for showcasing how to leverage zkVerify from a Solidity smart contract",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "postinstall": "node -e \"const fs=require('fs');const f='node_modules/@midnight-ntwrk/compact-js/dist/esm/effect/internal/compactContext.js';fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace(\\\"export const TypeId = Symbol();\\\",\\\"export const TypeId = Symbol.for('compact-js/internal/CompactContext');\\\"))\""
+
   },
+  
   "author": "HorizenLabs",
   "license": "MIT",
   "dependencies": {
+    "@midnight-ntwrk/compact-js": "^2.5.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "ethers": "^6.13.4",

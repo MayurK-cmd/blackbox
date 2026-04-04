@@ -12,7 +12,7 @@ interface AppState {
   setModels: (models: Model[]) => void;
   setWallet: (wallet: Partial<MidnightWalletState>) => void;
   setLastProof: (proof: MidnightProofPayload | null) => void;
-  connectWallet: (networkId?: 'mainnet' | 'preprod' | 'devnet') => Promise<void>;
+  connectWallet: (networkId?: 'mainnet' | 'preview' | 'preprod' | 'undeployed' | 'devnet') => Promise<void>;
   disconnectWallet: () => void;
   submitProof: (proof: MidnightProofPayload) => Promise<void>;
 }
@@ -22,9 +22,9 @@ const initialModels: Model[] = [
     id: '1',
     provider: 'mn_addr1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5zxujb2jml8lnmhaes02ygzx',
     name: 'Advanced Neural Analysis Tree',
-    description: 'High-performance neural analysis model optimized for geometric computations and spatial analysis. Provides accurate predictions for dimensional data processing.',
+    description: 'High-performance neural analysis model optimized for geometric computations and spatial analysis.',
     inputFormat: 'JSON with dimensional parameters (sepal_length, sepal_width, petal_length, petal_width)',
-    pricePerPrediction: 50_000n,   // raw DUST units
+    pricePerPrediction: 50_000n,
     circuitHash: '7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069',
     isActive: true,
     createdAt: '2024-03-15T08:30:00Z',
@@ -32,18 +32,21 @@ const initialModels: Model[] = [
   }
 ];
 
+const emptyWallet: MidnightWalletState = {
+  isConnected: false,
+  unshieldedAddress: null,
+  shieldedAddress: null,
+  networkId: 'preview',
+  nightBalance: 0n,
+  dustBalance: 0n,
+  connectedAPI: null,
+  proverServerUri: null,
+};
+
 export const useStore = create<AppState>((set, get) => ({
   user: null,
   models: initialModels,
-  wallet: {
-    isConnected: false,
-    unshieldedAddress: null,
-    shieldedAddress: null,
-    networkId: 'preprod',
-    nightBalance: 0n,
-    dustBalance: 0n,
-    connectedAPI: null,
-  },
+  wallet: emptyWallet,
   lastProof: null,
 
   setUser: (user) => set({ user }),
@@ -52,19 +55,26 @@ export const useStore = create<AppState>((set, get) => ({
   setLastProof: (proof) => set({ lastProof: proof }),
 
   // ── connectWallet ──────────────────────────────────────────────────────────
-  connectWallet: async (networkId = 'preprod') => {
+  connectWallet: async (networkId = 'preview') => {
     const injected = (window as any).midnight ?? {};
     const wallets = Object.values(injected) as any[];
 
     if (wallets.length === 0) {
-      throw new Error('No Midnight wallet detected. Please install Lace wallet.');
+      throw new Error('No Midnight wallet detected. Please install Lace or 1AM wallet.');
     }
 
-    const connectedAPI = await wallets[0].connect(networkId);
+    const wallet = wallets[0];
+    console.log('Connecting to wallet:', wallet.name, 'apiVersion:', wallet.apiVersion);
+
+    const connectedAPI = await wallet.connect(networkId);
+
+    // Get config to extract proverServerUri
+    const config = await connectedAPI.getConfiguration();
+    console.log('Wallet config:', config);
 
     const [
-      unshieldedAddress,
-      { shieldedAddress },
+      unshieldedAddressResult,
+      shieldedAddressResult,
       unshieldedBalances,
       dustBalance,
     ] = await Promise.all([
@@ -74,6 +84,15 @@ export const useStore = create<AppState>((set, get) => ({
       connectedAPI.getDustBalance(),
     ]);
 
+    // Lace v4 returns { unshieldedAddress: '...' } not a plain string
+    const unshieldedAddress = typeof unshieldedAddressResult === 'string'
+      ? unshieldedAddressResult
+      : (unshieldedAddressResult as any).unshieldedAddress;
+
+    const shieldedAddress = typeof shieldedAddressResult === 'string'
+      ? shieldedAddressResult
+      : (shieldedAddressResult as any).shieldedAddress;
+
     const nightBalance = Object.values(unshieldedBalances)[0] as bigint ?? 0n;
 
     set({
@@ -81,28 +100,17 @@ export const useStore = create<AppState>((set, get) => ({
         isConnected: true,
         unshieldedAddress,
         shieldedAddress,
-        networkId,
+        networkId: config.networkId as any ?? networkId,
         nightBalance,
         dustBalance,
         connectedAPI,
+        proverServerUri: config.proverServerUri ?? null,
       },
     });
   },
 
   // ── disconnectWallet ───────────────────────────────────────────────────────
-  disconnectWallet: () => {
-    set({
-      wallet: {
-        isConnected: false,
-        unshieldedAddress: null,
-        shieldedAddress: null,
-        networkId: 'preprod',
-        nightBalance: 0n,
-        dustBalance: 0n,
-        connectedAPI: null,
-      },
-    });
-  },
+  disconnectWallet: () => set({ wallet: emptyWallet }),
 
   // ── submitProof ────────────────────────────────────────────────────────────
   submitProof: async (proof) => {
@@ -115,15 +123,17 @@ export const useStore = create<AppState>((set, get) => ({
     set({ lastProof: { ...proof, status: 'pending' } });
 
     try {
-      // Step 1 – POST to Express backend, get proved unbalanced tx back
+      // Step 1 — POST to backend, get unbound tx back
       const response = await fetch(`${API_BASE}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          proof:               proof.risc0,
+          proof:             proof.risc0,
           selectiveDisclosure: proof.selectiveDisclosure,
-          contractAddress:     proof.contractAddress,
-          inputHash:           proof.inputHash,
+          contractAddress:   proof.contractAddress,
+          inputHash:         proof.inputHash,
+          submitterPublicKey: wallet.unshieldedAddress,
+          proverServerUri:   wallet.proverServerUri,  // ← from wallet config
         }),
       });
 
@@ -134,7 +144,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       const data = await response.json();
 
-      // Mock mode – no SDK configured yet
+      // Mock mode
       if (data.status === 'mock') {
         set({ lastProof: { ...proof, status: 'confirmed', txHash: data.txHash } });
         return;
@@ -142,9 +152,16 @@ export const useStore = create<AppState>((set, get) => ({
 
       set({ lastProof: { ...proof, status: 'proving' } });
 
-      // Step 2 – balance + submit via Lace wallet
-      const { tx: balancedTx } = await wallet.connectedAPI.balanceUnsealedTransaction(data.unbalancedTx);
-      const { txHash }         = await wallet.connectedAPI.submitTransaction(balancedTx);
+      // Step 2 — wallet balances + submits (wallet handles proving internally)
+      const balanceResult = await wallet.connectedAPI.balanceUnsealedTransaction(data.unbalancedTx);
+      const balancedTx = (balanceResult as any).tx ?? balanceResult;
+
+      set({ lastProof: { ...proof, status: 'submitting' } });
+
+      const submitResult = await wallet.connectedAPI.submitTransaction(balancedTx);
+      const txHash = typeof submitResult === 'string'
+        ? submitResult
+        : (submitResult as any).txHash;
 
       set({ lastProof: { ...proof, status: 'confirmed', txHash } });
 

@@ -1,11 +1,11 @@
 export interface Model {
   id: string;
-  provider: string;           // Bech32m address (mn_addr1…)
+  provider: string;
   name: string;
   description: string;
   inputFormat: string;
-  pricePerPrediction: bigint; // raw DUST units, not ETH float
-  circuitHash: string;        // was codeHash – references Compact circuit artefact
+  pricePerPrediction: bigint;
+  circuitHash: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -26,9 +26,9 @@ export interface ProofInput {
 }
 
 export interface Risc0ProofData {
-  proof: string;      // hex-encoded Groth16 proof bytes
-  pub_inputs: string; // hex-encoded public inputs
-  image_id: string;   // Risc0 guest image ID
+  proof: string;
+  pub_inputs: string;
+  image_id: string;
 }
 
 export interface ProofData {
@@ -36,64 +36,47 @@ export interface ProofData {
   risc0: Risc0ProofData;
 }
 
-export interface VerificationData {
-  isValid: boolean;
-  verificationHash: string;
-  timestamp: string;
-  details: {
-    modelName: string;
-    inputParameters: ProofInput;
-    computationTime: string;
-    confidence: number;
-  };
-}
-
-// ── Midnight wallet ───────────────────────────────────────────────────────────
-
 export interface MidnightConnectedAPI {
   getConfiguration(): Promise<MidnightServiceConfig>;
-  getUnshieldedAddress(): Promise<string>;
-  getShieldedAddresses(): Promise<{ shieldedAddress: string }>;
+  getUnshieldedAddress(): Promise<string | { unshieldedAddress: string }>;
+  getShieldedAddresses(): Promise<{ shieldedAddress: string; shieldedCoinPublicKey: string; shieldedEncryptionPublicKey: string }>;
   getUnshieldedBalances(): Promise<Record<string, bigint>>;
   getDustBalance(): Promise<bigint>;
   balanceUnsealedTransaction(tx: unknown): Promise<{ tx: unknown }>;
-  submitTransaction(tx: unknown): Promise<{ txHash: string }>;
+  submitTransaction(tx: unknown): Promise<{ txHash: string } | string>;
 }
 
 export interface MidnightServiceConfig {
   indexerUri: string;
   indexerWsUri: string;
   proverServerUri: string;
-  substrateNodeUri: string;
+  substrateNodeUri?: string;
   networkId: string;
 }
 
 export interface MidnightWalletState {
   isConnected: boolean;
-  unshieldedAddress: string | null;  // Bech32m (mn_addr1…)
+  unshieldedAddress: string | null;
   shieldedAddress: string | null;
-  networkId: 'mainnet' | 'preprod' | 'devnet';
+  networkId: 'mainnet' | 'preview' | 'preprod' | 'undeployed' | 'devnet';
   nightBalance: bigint;
   dustBalance: bigint;
   connectedAPI: MidnightConnectedAPI | null;
+  proverServerUri: string | null;
 }
-
-// ── Selective disclosure ──────────────────────────────────────────────────────
 
 export interface SelectiveDisclosureConfig {
   revealModelProvider: boolean;
-  revealInputData: boolean;      // maps to revealInputHash in Compact circuit
+  revealInputData: boolean;
   revealOutputResult: boolean;
   revealTimestamp: boolean;
 }
 
-// ── Proof payload ─────────────────────────────────────────────────────────────
-
 export interface MidnightProofPayload {
   risc0: Risc0ProofData;
-  inputHash: string;             // hex sha256 of inference inputs
+  inputHash: string;
   selectiveDisclosure: SelectiveDisclosureConfig;
-  contractAddress: string;       // Bech32m address of deployed Compact contract
+  contractAddress: string;
   txHash?: string;
   error?: string;
   status: 'pending' | 'proving' | 'submitting' | 'confirmed' | 'failed';

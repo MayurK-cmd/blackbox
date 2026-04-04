@@ -1,21 +1,18 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Brain, LogOut } from 'lucide-react';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-
-import { useConnectWallet, disconnectWallet } from '@newm.io/cardano-dapp-wallet-connector';
+import { useStore } from '../store';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
+  const { wallet, disconnectWallet } = useStore();
 
-  const { isConnected: isCardanoConnected, enabled } = useConnectWallet();
-
-  const handleCardanoDisconnect = () => {
-    disconnectWallet();
-  };
+  const shortAddress = wallet.unshieldedAddress
+    ? `${wallet.unshieldedAddress.slice(0, 10)}…${wallet.unshieldedAddress.slice(-6)}`
+    : '';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -41,17 +38,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
 
             <div className="flex items-center space-x-3">
-              {/* EVM wallet: show RainbowKit button (handles its own connected state) */}
-              {!isCardanoConnected && <ConnectButton />}
-
-              {/* Cardano wallet: show connected badge + disconnect button */}
-              {isCardanoConnected && (
+              {wallet.isConnected && (
                 <div className="flex items-center space-x-2 bg-gray-100 rounded-full px-4 py-2">
-                  <span className="text-sm font-medium text-gray-700 capitalize">
-                    {enabled ? 'Cardano' : 'Cardano'}
+                  <span className="w-2 h-2 rounded-full bg-green-400" />
+                  <span className="text-sm font-medium text-gray-700">
+                    {shortAddress}
                   </span>
                   <button
-                    onClick={handleCardanoDisconnect}
+                    onClick={disconnectWallet}
                     className="ml-2 text-gray-500 hover:text-red-600 transition-colors"
                     title="Disconnect Lace"
                   >

@@ -4,19 +4,29 @@ import { createRequire } from "module";
 import crypto from "crypto";
 import dotenv from "dotenv";
 
-// ── Static SDK imports ────────────────────────────────────────────────────────
-import { findDeployedContract } from "@midnight-ntwrk/midnight-js-contracts";
-import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
-import { FetchZkConfigProvider } from "@midnight-ntwrk/midnight-js-fetch-zk-config-provider";
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import { levelPrivateStateProvider } from "@midnight-ntwrk/midnight-js-level-private-state-provider";
-import { CompiledContract } from "@midnight-ntwrk/compact-js";
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
 
 console.log("[app.js] CONTRACT_ARTEFACTS_DIR:", process.env.CONTRACT_ARTEFACTS_DIR);
-console.log("[app.js] Midnight SDK loaded successfully.");
+
+// ── Load Midnight SDK ─────────────────────────────────────────────────────────
+let findDeployedContract, httpClientProofProvider, indexerPublicDataProvider,
+    NodeZkConfigProvider, setNetworkId, levelPrivateStateProvider,
+    CompiledContract, sdkLoaded = false;
+
+try {
+  ({ findDeployedContract } = await import("@midnight-ntwrk/midnight-js-contracts"));
+  ({ httpClientProofProvider } = await import("@midnight-ntwrk/midnight-js-http-client-proof-provider"));
+  ({ indexerPublicDataProvider } = await import("@midnight-ntwrk/midnight-js-indexer-public-data-provider"));
+  ({ NodeZkConfigProvider } = await import("@midnight-ntwrk/midnight-js-node-zk-config-provider"));
+  ({ setNetworkId } = await import("@midnight-ntwrk/midnight-js-network-id"));
+  ({ levelPrivateStateProvider } = await import("@midnight-ntwrk/midnight-js-level-private-state-provider"));
+  ({ CompiledContract } = await import("@midnight-ntwrk/compact-js"));
+  sdkLoaded = true;
+  console.log("[app.js] Midnight SDK loaded successfully.");
+} catch (e) {
+  console.warn("[app.js] Midnight SDK not found – mock mode:", e.message);
+}
 
 // ── Load contract artefacts ───────────────────────────────────────────────────
 let MidnightContract, witnesses, contractLoaded = false;
@@ -35,19 +45,25 @@ try {
 }
 
 // ── Network config ────────────────────────────────────────────────────────────
-const NETWORK_ID   = process.env.MIDNIGHT_NETWORK      ?? "preview";
-const INDEXER_HTTP = process.env.MIDNIGHT_INDEXER_HTTP ?? "https://indexer.preview.midnight.network/api/v4/graphql";
-const INDEXER_WS   = process.env.MIDNIGHT_INDEXER_WS   ?? "wss://indexer.preview.midnight.network/api/v4/graphql/ws";
+const NETWORK_ID    = process.env.MIDNIGHT_NETWORK      ?? "preview";
+const INDEXER_HTTP  = process.env.MIDNIGHT_INDEXER_HTTP ?? "https://indexer.preview.midnight.network/api/v4/graphql";
+const INDEXER_WS    = process.env.MIDNIGHT_INDEXER_WS   ?? "wss://indexer.preview.midnight.network/api/v4/graphql/ws";
+const PROVER_URI    = process.env.MIDNIGHT_PROVER_URI   ?? "http://localhost:6300";
+const ARTEFACTS_DIR = process.env.CONTRACT_ARTEFACTS_DIR
+  ?? path.join(__dirname, "managed", "contract", "contract");
 
-// ── Singleton public data provider ───────────────────────────────────────────
-let _publicDataProvider = null;
+// ── Singleton providers ───────────────────────────────────────────────────────
+let _proofProvider = null, _publicDataProvider = null, _zkConfigProvider = null;
 
-function getPublicDataProvider() {
-  if (!_publicDataProvider) {
+function getProviders() {
+  if (!sdkLoaded) throw new Error("Midnight SDK not loaded");
+  if (!_proofProvider) {
     setNetworkId(NETWORK_ID);
+    _proofProvider      = httpClientProofProvider(PROVER_URI);
     _publicDataProvider = indexerPublicDataProvider(INDEXER_HTTP, INDEXER_WS);
+    _zkConfigProvider   = new NodeZkConfigProvider(ARTEFACTS_DIR);
   }
-  return _publicDataProvider;
+  return { proofProvider: _proofProvider, publicDataProvider: _publicDataProvider, zkConfigProvider: _zkConfigProvider };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -59,35 +75,35 @@ function hashToField(hex) {
   return BigInt('0x' + hex.replace(/^0x/, '').padStart(64, '0').slice(0, 64));
 }
 
+// ── buildCompiledContract ─────────────────────────────────────────────────────
+// Now that compactContext.js uses Symbol.for('compact-js/internal/CompactContext'),
+// all module instances share the same symbol. We can use the SDK's own API cleanly:
+// make() stamps { ctor }, withWitnesses() adds { witnesses } — both use the same key.
+function buildCompiledContract(ctor, witnessMap) {
+  const base = CompiledContract.make('zkml-contract', ctor);
+  return CompiledContract.withWitnesses(base, witnessMap);
+}
+
 // ── run() ─────────────────────────────────────────────────────────────────────
-export async function run(proofData, publicInputs, selectiveDisclosure, contractAddress, inputHash, submitterPublicKey, proverServerUri) {
+export async function run(proofData, publicInputs, selectiveDisclosure, contractAddress, inputHash, submitterPublicKey) {
   console.log("[app.js] Starting Midnight verification...");
   console.log("[app.js] Network:", NETWORK_ID);
-  console.log("[app.js] Prover URI:", proverServerUri ?? process.env.MIDNIGHT_ZK_CONFIG_URL ?? "(not set)");
 
-  if (!contractLoaded) {
-    console.warn("[app.js] Mock mode – contract artefacts not loaded");
-    return mockResponse("Contract artefacts not loaded");
-  }
+  const missingSDK    = !sdkLoaded || !contractLoaded;
+  const missingConfig = !contractAddress;
 
-  if (!contractAddress) {
-    console.warn("[app.js] Mock mode – CONTRACT_ADDRESS missing");
-    return mockResponse("CONTRACT_ADDRESS missing");
+  if (missingSDK || missingConfig) {
+    const reason = missingSDK ? "Midnight SDK or contract artefacts not installed" : "CONTRACT_ADDRESS missing";
+    console.warn(`[app.js] Mock mode – ${reason}`);
+    return mockResponse(reason);
   }
 
   try {
-    const publicDataProvider = getPublicDataProvider();
+    const { proofProvider, publicDataProvider, zkConfigProvider } = getProviders();
 
-    // zkConfigProvider uses proverServerUri from wallet config
-    // const zkConfigUrl = proverServerUri
-    //   ?? process.env.MIDNIGHT_ZK_CONFIG_URL
-    //   ?? "https://proof-server.preview.midnight.network";
-    const zkConfigUrl = "http://localhost:6300";
-    const zkConfigProvider = new FetchZkConfigProvider(zkConfigUrl);
-
-    // CompiledContract.make() sets correct internal Symbol for findDeployedContract
-    const base = CompiledContract.make('zkml-marketplace', MidnightContract);
-    const compiledContract = CompiledContract.withWitnesses(base, witnesses);
+    // Build compiledContract via the SDK's own factory so the internal TypeId
+    // symbol is stamped correctly — no need to touch @internal modules.
+    const compiledContract = buildCompiledContract(MidnightContract, witnesses);
 
     const privateStateProvider = levelPrivateStateProvider({
       privateStateStoreName: 'zkml-private-state',
@@ -95,13 +111,15 @@ export async function run(proofData, publicInputs, selectiveDisclosure, contract
       accountId: submitterPublicKey ?? 'zkml-server-account',
     });
 
+    // Midnight SDK expects bare hex, no 0x prefix
     const bareAddress = contractAddress.replace(/^0x/, '');
-    console.log("[app.js] Resolving contract:", bareAddress);
 
+    console.log("[app.js] Resolving contract:", bareAddress);
     const deployedContract = await findDeployedContract(
       {
         publicDataProvider,
         zkConfigProvider,
+        proofProvider,
         privateStateProvider,
       },
       {
@@ -140,12 +158,14 @@ export async function run(proofData, publicInputs, selectiveDisclosure, contract
       timestamp,
     );
 
-    console.log("[app.js] Unbound transaction built. Returning to frontend for wallet proving.");
+    console.log("[app.js] Proving via proof server at", PROVER_URI, "...");
+    const provedTx = await unboundTx.prove(proofProvider, zkConfigProvider);
+    console.log("[app.js] Transaction proved successfully.");
 
     return {
       status:       "pending",
-      message:      "Transaction built. Wallet will prove and submit.",
-      unbalancedTx: unboundTx,
+      message:      "Transaction proved. Balance and submit via your Midnight wallet.",
+      unbalancedTx: provedTx,
       isValid:      true,
     };
 
@@ -163,6 +183,6 @@ function mockResponse(reason) {
     unbalancedTx:  null,
     txHash:        `mock-tx-${Date.now()}`,
     attestationId: Math.floor(Math.random() * 100000),
-    note:          "Set CONTRACT_ARTEFACTS_DIR and CONTRACT_ADDRESS in .env to enable real flow",
+    note:          "Set CONTRACT_ARTEFACTS_DIR and install Midnight SDK packages to enable real flow",
   };
 }
