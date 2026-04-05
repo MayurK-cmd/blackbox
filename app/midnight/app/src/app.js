@@ -11,9 +11,17 @@ import { FetchZkConfigProvider } from "@midnight-ntwrk/midnight-js-fetch-zk-conf
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { levelPrivateStateProvider } from "@midnight-ntwrk/midnight-js-level-private-state-provider";
 import { CompiledContract } from "@midnight-ntwrk/compact-js";
+import { NodeZkConfigProvider } from "@midnight-ntwrk/midnight-js-node-zk-config-provider";
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
+
+const zkConfigPath = process.env.CONTRACT_ARTEFACTS_DIR
+  ? path.dirname(process.env.CONTRACT_ARTEFACTS_DIR)  // goes up one level
+  : path.join(__dirname, "managed", "contract");
+
+const zkConfigProvider = new NodeZkConfigProvider(zkConfigPath);
 
 console.log("[app.js] CONTRACT_ARTEFACTS_DIR:", process.env.CONTRACT_ARTEFACTS_DIR);
 console.log("[app.js] Midnight SDK loaded successfully.");
@@ -79,10 +87,10 @@ export async function run(proofData, publicInputs, selectiveDisclosure, contract
     const publicDataProvider = getPublicDataProvider();
 
     // zkConfigProvider uses proverServerUri from wallet config
-    // const zkConfigUrl = proverServerUri
-    //   ?? process.env.MIDNIGHT_ZK_CONFIG_URL
-    //   ?? "https://proof-server.preview.midnight.network";
-    const zkConfigUrl = "http://localhost:6300";
+    const zkConfigUrl = proverServerUri
+      ?? process.env.MIDNIGHT_ZK_CONFIG_URL
+      ?? "http://localhost:6300";
+    
     const zkConfigProvider = new FetchZkConfigProvider(zkConfigUrl);
 
     // CompiledContract.make() sets correct internal Symbol for findDeployedContract
