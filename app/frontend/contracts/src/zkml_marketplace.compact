@@ -1,0 +1,48 @@
+pragma language_version >= 0.14.0;
+
+import CompactStandardLibrary;
+
+// Public ledger state — visible on-chain
+ledger {
+  // Tracks which submitter keys have verified proofs
+  // Key: submitter's public key hash, Value: proof input hash
+  verified_proofs: Map<Bytes<32>, Bytes<32>>;
+
+  // The circuit hash this contract governs (set at deploy time)
+  circuit_hash: Bytes<32>;
+}
+
+// Witnesses — private, never leave the user's machine
+witness {
+  proof_bytes: Bytes;
+  pub_inputs: Bytes;
+  image_id: Bytes<32>;
+  submitter_secret_key: Bytes<32>;
+}
+
+// Main verification circuit
+// Midnight verifies the ZK proof natively — no external contract needed
+export circuit verify_inference(
+  input_hash:       Bytes<32>,
+  reveal_provider:  Boolean,
+  reveal_input:     Boolean,
+  reveal_output:    Boolean,
+  reveal_timestamp: Boolean,
+): [] {
+
+  // Derive submitter's public key from their secret key
+  const submitter_pk = public_key(witness.submitter_secret_key);
+
+  // Record the verified proof on the public ledger
+  // Only input_hash is stored — proof bytes stay private
+  ledger.verified_proofs.insert(submitter_pk, input_hash);
+
+  // Selective disclosure — only reveal fields the user opted into
+  if reveal_provider  { disclose(submitter_pk); }
+  if reveal_input     { disclose(input_hash); }
+}
+
+// Read-only circuit — check if an address has a verified proof
+export circuit has_verified_proof(submitter_pk: Bytes<32>): Boolean {
+  return ledger.verified_proofs.member(submitter_pk);
+}

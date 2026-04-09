@@ -1,69 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Loader } from 'lucide-react';
+import React, { useState } from 'react';
 import { Layout } from '../components/Layout';
 import { ModelCard } from '../components/ModelCard';
-import { useReadContract } from 'wagmi';
-import { abi } from '../../abi/MLModelMarketplace';
+import { useStore } from '../store';
 
 export const ExplorePage: React.FC = () => {
-  const [modelIds] = useState<number[]>([1, 2, 3, 4, 5]); // Test with first 5 IDs
-  const [chainModels, setChainModels] = useState<any[]>([]);
+  const { models } = useStore();
   const [selectedStatus, setSelectedStatus] = useState('all');
 
-  const { data, isPending, error } = useReadContract({
-    address: '0xA81a624F25a114b392A0894703b380aEb7cd7864',
-    abi,
-    functionName: 'getModelDetails',
-    args: [6], // Initial fetch for testing
-  });
-
-  useEffect(() => {
-    if (data) {
-      const [
-        provider,
-        name,
-        description,
-        inputFormat,
-        pricePerPrediction,
-        codeHash,
-        isActive
-      ] = data as any[];
-      
-      setChainModels([{
-        id: '1',
-        provider,
-        name,
-        description,
-        inputFormat,
-        pricePerPrediction: Number(pricePerPrediction) / 1e18,
-        codeHash,
-        isActive,
-        status: isActive ? 'verified' : 'failed'
-      }]);
-    }
-  }, [data]);
-
-  const filteredModels = chainModels.filter(model => {
+  const filteredModels = models.filter(model => {
     if (selectedStatus === 'all') return true;
-    return model.status === selectedStatus;
+    return selectedStatus === 'verified' ? model.isActive : !model.isActive;
   });
-
-  if (isPending) return (
-    <Layout>
-      <div className="text-center py-8">
-        <Loader className="animate-spin h-8 w-8 mx-auto" />
-        <p className="mt-2 text-gray-600">Loading models from blockchain...</p>
-      </div>
-    </Layout>
-  );
-
-  if (error) return (
-    <Layout>
-      <div className="text-center py-8 text-red-600">
-        Error loading models: {error.message}
-      </div>
-    </Layout>
-  );
 
   return (
     <Layout>
@@ -76,22 +23,22 @@ export const ExplorePage: React.FC = () => {
             onChange={(e) => setSelectedStatus(e.target.value)}
           >
             <option value="all">All Statuses</option>
-            <option value="verified">Verified</option>
-            <option value="failed">Failed</option>
+            <option value="verified">Active</option>
+            <option value="failed">Inactive</option>
           </select>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredModels.map((model) => (
-            <ModelCard key={model.id} model={{
-              ...model,
-              // Map blockchain model to local Model type
-              pricePerPrediction: Number(model.pricePerPrediction),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            }} />
-          ))}
-        </div>
+        {filteredModels.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            No models found.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredModels.map((model) => (
+              <ModelCard key={model.id} model={model} />
+            ))}
+          </div>
+        )}
       </div>
     </Layout>
   );

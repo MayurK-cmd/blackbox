@@ -1,15 +1,15 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useAccount } from 'wagmi';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UploadPage } from './pages/UploadPage';
 import { ExplorePage } from './pages/ExplorePage';
 import { ModelDetailsPage } from './pages/ModelDetailsPage';
+import { useStore } from './store';
 
 function App() {
-  const { isConnected } = useAccount();
+  const isConnected = useStore((s) => s.wallet.isConnected);
 
   return (
     <Router>

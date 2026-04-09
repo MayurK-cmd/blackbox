@@ -20,7 +20,7 @@ async function run() {
     .execute(vk);
     
   const { statementHash } = await transactionResult;
-  console.log(`vk hash: ${statementHash}`);
+  console.log(`Hey, vk hash: ${statementHash}`);
 }
 
 run()
