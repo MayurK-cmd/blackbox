@@ -1,48 +1,103 @@
-pragma language_version >= 0.14.0;
-
+pragma language_version >= 0.20;
 import CompactStandardLibrary;
 
-// Public ledger state — visible on-chain
-ledger {
-  // Tracks which submitter keys have verified proofs
-  // Key: submitter's public key hash, Value: proof input hash
-  verified_proofs: Map<Bytes<32>, Bytes<32>>;
+export ledger registry_open: Boolean;
+export ledger total_submissions: Uint<64>;
+export ledger total_checks: Uint<64>;
+export ledger nonce: Counter;
 
-  // The circuit hash this contract governs (set at deploy time)
-  circuit_hash: Bytes<32>;
+// Core proof registry (keyed by submitter public key)
+export ledger is_verified: Map<Bytes<32>, Boolean>;
+export ledger proof_hashes: Map<Bytes<32>, Bytes<32>>;
+export ledger pub_inputs_hashes: Map<Bytes<32>, Bytes<32>>;
+export ledger image_ids: Map<Bytes<32>, Bytes<32>>;
+
+// Selective disclosure flags
+export ledger reveal_provider_flags: Map<Bytes<32>, Boolean>;
+export ledger reveal_input_flags: Map<Bytes<32>, Boolean>;
+export ledger reveal_output_flags: Map<Bytes<32>, Boolean>;
+export ledger reveal_timestamp_flags: Map<Bytes<32>, Boolean>;
+
+// Optionally disclosed values (stored only when corresponding reveal flag is true)
+export ledger provider_codes: Map<Bytes<32>, Uint<32>>;
+export ledger input_codes: Map<Bytes<32>, Uint<32>>;
+export ledger output_codes: Map<Bytes<32>, Uint<32>>;
+export ledger proof_timestamps: Map<Bytes<32>, Uint<64>>;
+
+// Latest check result for UI-friendly status reads
+export ledger last_checked_key: Bytes<32>;
+export ledger last_check_verified: Boolean;
+
+constructor() {
+  registry_open = true;
+  total_submissions = 0;
+  total_checks = 0;
+  last_check_verified = false;
 }
 
-// Witnesses — private, never leave the user's machine
-witness {
-  proof_bytes: Bytes;
-  pub_inputs: Bytes;
-  image_id: Bytes<32>;
-  submitter_secret_key: Bytes<32>;
+export circuit set_registry_open(is_open: Boolean): [] {
+  registry_open = disclose(is_open);
+  nonce.increment(1);
 }
 
-// Main verification circuit
-// Midnight verifies the ZK proof natively — no external contract needed
-export circuit verify_inference(
-  input_hash:       Bytes<32>,
-  reveal_provider:  Boolean,
-  reveal_input:     Boolean,
-  reveal_output:    Boolean,
+export circuit submit_proof(
+  submitter_public_key: Bytes<32>,
+  proof_hash: Bytes<32>,
+  pub_inputs_hash: Bytes<32>,
+  image_id: Bytes<32>,
+  reveal_provider: Boolean,
+  provider_code: Uint<32>,
+  reveal_input: Boolean,
+  input_code: Uint<32>,
+  reveal_output: Boolean,
+  output_code: Uint<32>,
   reveal_timestamp: Boolean,
+  timestamp: Uint<64>
 ): [] {
+  assert(registry_open, "Registry is closed");
 
-  // Derive submitter's public key from their secret key
-  const submitter_pk = public_key(witness.submitter_secret_key);
+  const key = disclose(submitter_public_key);
+  assert(key != pad(32, ""), "Invalid submitter public key");
+  assert(!is_verified.member(key), "Proof already submitted for key");
 
-  // Record the verified proof on the public ledger
-  // Only input_hash is stored — proof bytes stay private
-  ledger.verified_proofs.insert(submitter_pk, input_hash);
+  is_verified.insert(key, true);
+  proof_hashes.insert(key, disclose(proof_hash));
+  pub_inputs_hashes.insert(key, disclose(pub_inputs_hash));
+  image_ids.insert(key, disclose(image_id));
 
-  // Selective disclosure — only reveal fields the user opted into
-  if reveal_provider  { disclose(submitter_pk); }
-  if reveal_input     { disclose(input_hash); }
+  const rp = disclose(reveal_provider);
+  const ri = disclose(reveal_input);
+  const ro = disclose(reveal_output);
+  const rt = disclose(reveal_timestamp);
+
+  reveal_provider_flags.insert(key, rp);
+  reveal_input_flags.insert(key, ri);
+  reveal_output_flags.insert(key, ro);
+  reveal_timestamp_flags.insert(key, rt);
+
+  if (rp) {
+    provider_codes.insert(key, disclose(provider_code));
+  }
+  if (ri) {
+    input_codes.insert(key, disclose(input_code));
+  }
+  if (ro) {
+    output_codes.insert(key, disclose(output_code));
+  }
+  if (rt) {
+    proof_timestamps.insert(key, disclose(timestamp));
+  }
+
+  total_submissions = disclose((total_submissions + 1) as Uint<64>);
+  nonce.increment(1);
 }
 
-// Read-only circuit — check if an address has a verified proof
-export circuit has_verified_proof(submitter_pk: Bytes<32>): Boolean {
-  return ledger.verified_proofs.member(submitter_pk);
+export circuit check_verification(submitter_public_key: Bytes<32>): [] {
+  const key = disclose(submitter_public_key);
+  const verified = is_verified.member(key) ? is_verified.lookup(key) : false;
+
+  last_checked_key = key;
+  last_check_verified = disclose(verified);
+  total_checks = disclose((total_checks + 1) as Uint<64>);
+  nonce.increment(1);
 }
