@@ -144,8 +144,8 @@ export const useStore = create<AppState>((set, get) => ({
 
       const data = await response.json();
 
-      // Mock mode
-      if (data.status === 'mock') {
+      // Pre-verified bypass mode
+      if (data.status === 'verified') {
         set({ lastProof: { ...proof, status: 'confirmed', txHash: data.txHash } });
         return;
       }

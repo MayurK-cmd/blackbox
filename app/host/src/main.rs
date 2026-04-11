@@ -14,6 +14,12 @@ pub struct ProofOutput {
     pub image_id: String,
 }
 
+#[derive(Serialize)]
+struct GenerateProofResponse {
+    proofData: ProofOutput,
+    prediction: String,
+}
+
 #[derive(Deserialize)]
 struct IrisInput {
     sepal_length: u32,
@@ -39,7 +45,7 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn generate_proof(Json(input): Json<IrisInput>) -> Json<String> {
+async fn generate_proof(Json(input): Json<IrisInput>) -> Json<GenerateProofResponse> {
     let data: (u32, u32, u32, u32) = (
         input.sepal_length,
         input.sepal_width,
@@ -77,18 +83,22 @@ async fn generate_proof(Json(input): Json<IrisInput>) -> Json<String> {
     };
 
     let proof_output_json = serde_json::to_string(&proof_output).unwrap();
-    fs::write("/zk_dtp/zkVerify/app/src/proof.json", proof_output_json).unwrap();
+    fs::write("proof.json", &proof_output_json).unwrap();
 
     let output: u32 = receipt.journal.decode().unwrap();
     let dic = ["setosa", "versicolor", "virginica"];
-    Json(format!(
-        "This is the {} flower, and I can prove it!",
-        dic[output as usize]
-    ))
+
+    Json(GenerateProofResponse {
+        proofData: proof_output,
+        prediction: format!(
+            "This is the {} flower, and I can prove it!",
+            dic[output as usize]
+        ),
+    })
 }
 
 async fn get_proof() -> Json<ProofOutput> {
-    let proof_file = fs::read_to_string("/zk_dtp/zkVerify/app/src/proof.json").unwrap();
+    let proof_file = fs::read_to_string("proof.json").unwrap();
     let proof_output: ProofOutput = serde_json::from_str(&proof_file).unwrap();
     Json(proof_output)
 }
@@ -96,9 +106,9 @@ async fn get_proof() -> Json<ProofOutput> {
 async fn verify_proof() -> Result<Json<String>, axum::http::StatusCode> {
     println!("Executing Node.js script for proof verification...");
     
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg("cd zk_dtp/zkVerify/app/src && node app.js")
+    let output = std::process::Command::new("cmd")
+        .arg("/C")
+        .arg("node app.js")
         .output()
         .map_err(|e| {
             let error_msg = format!("Command execution error: {:?}", e);

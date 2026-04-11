@@ -75,7 +75,7 @@ export const ModelDetailsPage: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const inputHash = hashInputs(proofInput);
+      const inputHash = await hashInputs(proofInput);
 
       const payload: MidnightProofPayload = {
         risc0: {

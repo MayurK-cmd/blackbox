@@ -1,20 +1,20 @@
 use risc0_zkvm::guest::env;
 
 pub fn main() {
-    let (sepal_length, sepal_width, petal_length, petal_width): (u32, u32, u32, u32) = env::read();
+    let (sepal_length, _sepal_width, petal_length, petal_width): (u32, u32, u32, u32) = env::read();
 
     println!(
         "The input is: {}, {}, {}, {}",
-        sepal_length, sepal_width, petal_length, petal_width
+        sepal_length, _sepal_width, petal_length, petal_width
     );
 
-    let prediction: u32 = predict(sepal_length, sepal_width, petal_length, petal_width);
+    let prediction: u32 = predict(sepal_length, _sepal_width, petal_length, petal_width);
 
     println!("The prediction is: {}", prediction);
     env::commit(&prediction);
 }
 
-fn predict(sepal_length: u32, sepal_width: u32, petal_length: u32, petal_width: u32) -> u32 {
+fn predict(sepal_length: u32, _sepal_width: u32, petal_length: u32, petal_width: u32) -> u32 {
     if petal_width <= 80 {
         return 0;
     } else {

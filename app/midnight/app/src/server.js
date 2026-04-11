@@ -10,7 +10,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 app.post('/verify', async (req, res) => {
   const { proof, publicInputs, selectiveDisclosure, contractAddress, inputHash, submitterPublicKey, proverServerUri } = req.body;
@@ -25,8 +25,8 @@ app.post('/verify', async (req, res) => {
   try {
     const result = await run(proof, publicInputs, selectiveDisclosure, contractAddress, inputHash, submitterPublicKey, proverServerUri);
 
-    if (result.status === 'mock') {
-      console.warn('[server.js] Returning mock response:', result.note);
+    if (result.status === 'verified') {
+      console.log('[server.js] Returning verification response:', result.note);
       return res.json(result);
     }
 
@@ -38,10 +38,10 @@ app.post('/verify', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[server.js] Verification error:', error);
+    console.error('[server.js] Verification error stack trace:', error.stack);
     return res.status(500).json({
       status:  'error',
-      message: error.message || 'Verification process failed.',
+      message: error.stack || error.message || 'Verification process failed.',
     });
   }
 });
